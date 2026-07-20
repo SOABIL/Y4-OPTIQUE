@@ -144,6 +144,7 @@ input,select,textarea,button{font-family:inherit;outline:none;}
   </div>
   <button class="nb active" onclick="nav('dashboard',this)"><span class="ni">◉</span>Dashboard</button>
   <button class="nb" onclick="nav('commandes',this)"><span class="ni">📦</span>Commandes</button>
+  <button class="nb" onclick="nav('suivibl',this)"><span class="ni">📋</span>Suivi BL</button>
   <button class="nb" onclick="nav('retards',this)"><span class="ni">⚠️</span>Suivi retards<span class="nbadge" id="retards-badge" style="display:none">0</span></button>
   <button class="nb" onclick="nav('clients',this)"><span class="ni">👤</span>Clients</button>
   <div class="nav-sec">Catalogue</div>
@@ -201,6 +202,41 @@ input,select,textarea,button{font-family:inherit;outline:none;}
     </div>
   </div>
 </div>
+
+<!-- SUIVI BL -->
+<div class="view" id="v-suivibl">
+  <div class="tb">
+    <div class="tb-title" id="suivibl-title">Suivi des bons de livraison</div>
+    <input class="fi" style="max-width:170px;" placeholder="🔍 N° bon, client, BL..." oninput="blSearch=this.value;renderSuiviBL()">
+    <select class="fs" style="width:110px;" id="bl-mois" onchange="renderSuiviBL()">
+      <option value="">Tous les mois</option>
+    </select>
+    <select class="fs" style="width:120px;" id="bl-statut" onchange="renderSuiviBL()">
+      <option value="">Tous statuts</option>
+      <option value="sans_bl">Sans BL</option>
+      <option value="avec_bl">Avec BL</option>
+      <option>Commandé</option>
+      <option>Reçu</option>
+      <option>Monté</option>
+      <option>Prêt</option>
+      <option>Livré</option>
+    </select>
+    <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt2);cursor:pointer;">
+      <input type="checkbox" id="bl-groupe" onchange="renderSuiviBL()"> Par mois
+    </label>
+    <button class="btn bg bsm" onclick="imprimerSuiviBL()">🖨️ Imprimer</button>
+  </div>
+  <div class="ct">
+    <div id="suivibl-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:13px;"></div>
+    <div class="card">
+      <div class="th" style="grid-template-columns:95px 1fr 90px 100px 90px 90px 85px 85px;">
+        <div>N° BON</div><div>CLIENT</div><div>FOURNISSEUR</div><div>STATUT</div><div>DATE CMD</div><div>LIVR. PRÉVUE</div><div>N° BL</div><div>DATE RÉCEPTION</div>
+      </div>
+      <div id="bl-list"></div>
+    </div>
+  </div>
+</div>
+
 
 <!-- SUIVI RETARDS -->
 <div class="view" id="v-retards">
@@ -746,7 +782,7 @@ function nav(name,btn){
   const v=g('v-'+name);if(v)v.classList.add('on');
   if(btn)btn.classList.add('active');
   CUR=name;
-  const r={dashboard:renderDash,commandes:renderCmds,retards:renderRetards,clients:renderClients,verres:renderVerres,traitements:renderTraitements,fournisseurs:renderFours,rapports:renderRapports,notifs:renderNotifs,admin:renderAdmin};
+  const r={dashboard:renderDash,commandes:renderCmds,retards:renderRetards,suivibl:renderSuiviBL,clients:renderClients,verres:renderVerres,traitements:renderTraitements,fournisseurs:renderFours,rapports:renderRapports,notifs:renderNotifs,admin:renderAdmin};
   if(r[name])r[name]();
 }
 
@@ -2112,6 +2148,270 @@ async function sendEmailNotif(){
   if(_notifCl)addNotif('Email','manuel',ejsOk?'Envoyée':'Ouvert',email,msg.slice(0,70));
   save();updateBadge();
   btn.disabled=false;btn.textContent='✉ Email';
+}
+
+
+// ════════════════════════════════════════════════════
+// SUIVI BONS DE LIVRAISON (BL)
+// ════════════════════════════════════════════════════
+let blSearch = '';
+
+function renderSuiviBL(){
+  const s = blSearch.toLowerCase();
+  const filtre = g('bl-statut')?.value || '';
+  const moisFiltre = g('bl-mois')?.value || '';
+  const grouper = g('bl-groupe')?.checked || false;
+
+  // Peupler le filtre mois
+  const moisDispo = [...new Set(S.commandes.map(c=>c.dc?c.dc.slice(0,7):'').filter(Boolean))].sort().reverse();
+  const blMois = g('bl-mois');
+  if(blMois && blMois.options.length <= 1){
+    moisDispo.forEach(m=>{
+      const [an,mo]=m.split('-');
+      const label=new Date(m+'-01').toLocaleDateString('fr-CI',{month:'long',year:'numeric'});
+      const o=document.createElement('option');o.value=m;o.textContent=label;
+      blMois.appendChild(o);
+    });
+  }
+
+  let list = S.commandes.filter(cmd => {
+    const cl = gc(cmd.cid);
+    const num = numBon(cmd.id);
+    const matchSearch = !s ||
+      num.toLowerCase().includes(s) ||
+      (cl?(cl.nom+' '+cl.prenom).toLowerCase().includes(s):false) ||
+      (cmd.bl||'').toLowerCase().includes(s) ||
+      (cmd.fid||'').toLowerCase().includes(s);
+    const matchStatut = !filtre ? true :
+      filtre==='sans_bl' ? !cmd.bl :
+      filtre==='avec_bl' ? !!cmd.bl :
+      cmd.statut===filtre;
+    const matchMois = !moisFiltre || (cmd.dc||'').startsWith(moisFiltre);
+    return matchSearch && matchStatut && matchMois;
+  });
+
+  list.sort((a,b)=>{
+    if(!a.bl&&b.bl)return -1;
+    if(a.bl&&!b.bl)return 1;
+    return new Date(b.dc)-new Date(a.dc);
+  });
+
+  g('suivibl-title').textContent='Suivi des bons de livraison ('+list.length+')';
+
+  // Stats sur la liste filtrée
+  const avecBL=list.filter(c=>c.bl).length;
+  const sansBL=list.filter(c=>!c.bl&&c.statut!=='En attente').length;
+  const recus=list.filter(c=>['Reçu','Monté','Prêt','Livré'].includes(c.statut)).length;
+  g('suivibl-stats').innerHTML=[
+    {l:'Total',v:list.length,c:'var(--teal)',i:'📦'},
+    {l:'BL reçus',v:avecBL,c:'var(--green)',i:'✅'},
+    {l:'Sans BL',v:sansBL,c:'var(--amber)',i:'⏳'},
+    {l:'Réceptionnées',v:recus,c:'var(--blue)',i:'📥'}
+  ].map(k=>'<div class="card" style="padding:12px;text-align:center;border-top:3px solid '+k.c+';">'
+    +'<div style="font-size:18px;margin-bottom:3px;">'+k.i+'</div>'
+    +'<div style="font-family:Syne,sans-serif;font-size:22px;font-weight:700;color:'+k.c+';">'+k.v+'</div>'
+    +'<div style="font-size:9.5px;color:var(--txt2);margin-top:2px;">'+k.l+'</div>'
+    +'</div>').join('');
+
+  if(!list.length){
+    g('bl-list').innerHTML='<div style="padding:30px;text-align:center;color:var(--txt3);">Aucun résultat.</div>';
+    return;
+  }
+
+  const rowHTML = cmd => {
+    const cl=gc(cmd.cid);const num=numBon(cmd.id);
+    const j=jrs(cmd.dlp);const ret=j!==null&&j<=-1&&cmd.statut==='Commandé';
+    const hasBL=!!cmd.bl;
+    const bg=ret?'#fffbfb':(!hasBL&&cmd.statut==='Commandé'?'#fffbf0':'#fff');
+    return '<div class="tr" style="grid-template-columns:95px 1fr 90px 100px 90px 90px 85px 85px;background:'+bg+';">'
+      +'<div>'
+        +'<div style="font-weight:700;color:var(--teal);font-size:10.5px;">'+esc(num)+'</div>'
+        +(cmd.fac?'<div style="font-size:9px;color:var(--txt3);">'+esc(cmd.fac)+'</div>':'')
+      +'</div>'
+      +'<div>'
+        +'<div style="font-weight:500;font-size:11.5px;">'+(cl?esc(cl.nom+' '+cl.prenom):'—')+'</div>'
+        +(cl&&cl.tel?'<div style="font-size:9.5px;color:var(--txt2);">'+esc(cl.tel)+'</div>':'')
+      +'</div>'
+      +'<div style="font-size:10.5px;color:var(--teal);font-weight:500;">'+esc((cmd.fid||'—').split(' ')[0])+'</div>'
+      +badge(cmd.statut)
+      +'<div style="font-size:10.5px;color:var(--txt2);">'+fmt(cmd.dc)+'</div>'
+      +'<div style="font-size:10.5px;color:'+(ret?'var(--red)':'var(--txt2)')+';font-weight:'+(ret?600:400)+';">'
+        +fmt(cmd.dlp)+(ret?'<br><span style="font-size:9px;color:var(--red);">'+Math.abs(j)+'j retard</span>':'')
+      +'</div>'
+      +'<div>'
+        +(hasBL
+          ?'<div style="font-weight:600;font-size:10.5px;color:var(--green);">'+esc(cmd.bl)+'</div>'
+          :(cmd.statut==='Commandé'||cmd.statut==='Reçu'
+            ?'<button onclick="saisirBL('+cmd.id+')" style="background:var(--amber);color:#fff;border:none;border-radius:4px;padding:2px 6px;font-size:9px;cursor:pointer;">+ BL</button>'
+            :'<span style="color:var(--txt3);font-size:10px;">—</span>'
+          )
+        )
+      +'</div>'
+      +'<div style="font-size:10.5px;color:'+(cmd.dll?'var(--green)':'var(--txt3)')+'">'
+        +(cmd.dll?fmt(cmd.dll):'—')
+      +'</div>'
+      +'</div>';
+  };
+
+  const header = '<div class="th" style="grid-template-columns:95px 1fr 90px 100px 90px 90px 85px 85px;">'
+    +'<div>N° BON</div><div>CLIENT</div><div>FOURN.</div><div>STATUT</div>'
+    +'<div>DATE CMD</div><div>LIVR. PRÉVUE</div><div>N° BL</div><div>DATE RÉCEPTION</div>'
+    +'</div>';
+
+  if(grouper){
+    // Regrouper par mois
+    const groupes = {};
+    list.forEach(cmd=>{
+      const mois=cmd.dc?cmd.dc.slice(0,7):'Inconnu';
+      if(!groupes[mois])groupes[mois]=[];
+      groupes[mois].push(cmd);
+    });
+    const moisTries=Object.keys(groupes).sort().reverse();
+    g('bl-list').innerHTML=moisTries.map(mois=>{
+      const label=mois!=='Inconnu'?new Date(mois+'-01').toLocaleDateString('fr-CI',{month:'long',year:'numeric'}):mois;
+      const cmds=groupes[mois];
+      const avecBLm=cmds.filter(c=>c.bl).length;
+      return '<div style="margin-bottom:14px;">'
+        +'<div style="background:linear-gradient(135deg,var(--teal),#059669);color:#fff;padding:7px 13px;border-radius:7px 7px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+          +'<div style="font-family:Syne,sans-serif;font-size:12px;font-weight:700;">📅 '+label+'</div>'
+          +'<div style="font-size:10px;opacity:.85;">'+cmds.length+' commande(s) &middot; '+avecBLm+' BL reçu(s)</div>'
+        +'</div>'
+        +'<div class="card" style="border-radius:0 0 7px 7px;">'
+          +header
+          +cmds.map(rowHTML).join('')
+        +'</div>'
+        +'</div>';
+    }).join('');
+  } else {
+    g('bl-list').innerHTML='<div class="card">'+header+list.map(rowHTML).join('')+'</div>';
+  }
+}
+
+// Saisir rapidement un N° BL depuis le tableau
+function saisirBL(cmdId){
+  const cmd = S.commandes.find(c=>c.id===cmdId);if(!cmd)return;
+  const bl = prompt('N° Bon de livraison pour '+numBon(cmdId)+' :','');
+  if(bl===null)return;
+  cmd.bl = bl.trim();
+  if(!cmd.dll) cmd.dll = doff(0);
+  if(bl && cmd.statut==='Commandé') cmd.statut='Reçu';
+  save();renderSuiviBL();
+  showToast('BL enregistré : '+bl);
+}
+
+// Imprimer le suivi BL
+function imprimerSuiviBL(){
+  const cfg = getCfg();
+  const moisFiltre = g('bl-mois')?.value || '';
+  const filtre = g('bl-statut')?.value || '';
+  const grouper = g('bl-groupe')?.checked || false;
+
+  // Filtrer exactement comme l'affichage
+  let list = S.commandes.filter(cmd => {
+    const matchMois = !moisFiltre || (cmd.dc||'').startsWith(moisFiltre);
+    const matchStatut = !filtre ? true :
+      filtre==='sans_bl' ? !cmd.bl :
+      filtre==='avec_bl' ? !!cmd.bl :
+      cmd.statut===filtre;
+    return matchMois && matchStatut;
+  }).sort((a,b)=>new Date(b.dc)-new Date(a.dc));
+
+  // Titre de la période imprimée
+  let periodeLabel = 'Toutes les commandes';
+  if(moisFiltre){
+    periodeLabel = new Date(moisFiltre+'-01').toLocaleDateString('fr-CI',{month:'long',year:'numeric'});
+  }
+  if(filtre && filtre!=='sans_bl' && filtre!=='avec_bl') periodeLabel += ' — '+filtre;
+  else if(filtre==='sans_bl') periodeLabel += ' — Sans BL';
+  else if(filtre==='avec_bl') periodeLabel += ' — Avec BL';
+
+  const avecBL=list.filter(c=>c.bl).length;
+  const sansBL=list.filter(c=>!c.bl&&c.statut!=='En attente').length;
+
+  const pw = window.open('','_blank');
+  pw.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Suivi BL — '+periodeLabel+'</title>'
+    +'<style>@page{size:A4 landscape;margin:1cm;}*{box-sizing:border-box;margin:0;padding:0;}'
+    +'body{font-family:Arial,sans-serif;font-size:9.5px;}'
+    +'.hd{background:#04747c;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    +'.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}'
+    +'.stat{background:#f0f9f9;border-radius:6px;padding:8px;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    +'.sv{font-size:18px;font-weight:700;color:#04747c;}'
+    +'.sl{font-size:8px;color:#6b7280;}'
+    +'.mois-hd{background:#04747c;color:#fff;padding:5px 10px;font-weight:700;font-size:10px;margin:8px 0 0;-webkit-print-color-adjust:exact;print-color-adjust:exact;border-radius:4px 4px 0 0;display:flex;justify-content:space-between;}'
+    +'table{width:100%;border-collapse:collapse;}'
+    +'th{background:#e0f2f9;color:#04747c;padding:4px 6px;text-align:left;font-size:8.5px;border:.5px solid #bfdbfe;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    +'td{padding:4px 6px;border:.5px solid #e2e8f0;font-size:8.5px;vertical-align:middle;}'
+    +'tr:nth-child(even) td{background:#f8fafc;}'
+    +'.bl-ok{color:#059669;font-weight:700;}'
+    +'.bl-non{color:#f59e0b;font-style:italic;}'
+    +'.ret{color:#ef4444;font-weight:700;}'
+    +'</style></head><body>'
+    +'<div class="hd">'
+      +'<div>'
+        +'<div style="font-size:13px;font-weight:700;">SUIVI DES BONS DE LIVRAISON</div>'
+        +'<div style="font-size:9px;opacity:.85;">'+esc(cfg.nom)+' — '+esc(cfg.adr)+'</div>'
+        +'<div style="font-size:9px;opacity:.85;margin-top:2px;">Période : <strong>'+periodeLabel+'</strong></div>'
+      +'</div>'
+      +'<div style="text-align:right;">'
+        +'<div style="font-size:11px;font-weight:600;">'+list.length+' commande(s)</div>'
+        +'<div style="font-size:8.5px;opacity:.85;">BL reçus : '+avecBL+' · Sans BL : '+sansBL+'</div>'
+        +'<div style="font-size:8.5px;opacity:.75;">Imprimé le '+new Date().toLocaleDateString('fr-CI',{day:'numeric',month:'long',year:'numeric'})+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div class="stats">'
+      +[{l:'Total commandes',v:list.length},{l:'BL reçus',v:avecBL},{l:'Sans BL',v:sansBL},{l:'Livrées',v:list.filter(c=>c.statut==='Livré').length}]
+      .map(k=>'<div class="stat"><div class="sv">'+k.v+'</div><div class="sl">'+k.l+'</div></div>').join('')
+    +'</div>');
+
+  const tableHeader = '<table><thead><tr>'
+    +'<th>N° BON</th><th>RÉF. FACTURE</th><th>CLIENT</th><th>TÉL.</th>'
+    +'<th>FOURNISSEUR</th><th>STATUT</th><th>DATE CMD</th>'
+    +'<th>LIVR. PRÉVUE</th><th>N° BON LIVRAISON</th><th>DATE RÉCEPTION</th><th>ARTICLE</th>'
+    +'</tr></thead><tbody>';
+
+  const tableRow = cmd => {
+    const cl=gc(cmd.cid);const j=jrs(cmd.dlp);
+    const ret=j!==null&&j<=-1&&cmd.statut==='Commandé';
+    return '<tr>'
+      +'<td><strong>'+numBon(cmd.id)+'</strong></td>'
+      +'<td>'+esc(cmd.fac||'—')+'</td>'
+      +'<td><strong>'+(cl?esc(cl.nom+' '+cl.prenom):'—')+'</strong></td>'
+      +'<td>'+(cl?esc(cl.tel||'—'):'—')+'</td>'
+      +'<td>'+esc(cmd.fid||'—')+'</td>'
+      +'<td>'+esc(cmd.statut)+'</td>'
+      +'<td>'+fmt(cmd.dc)+'</td>'
+      +'<td class="'+(ret?'ret':'')+'">'+fmt(cmd.dlp)+(ret?' ('+Math.abs(j)+'j)':'')+'</td>'
+      +'<td class="'+(cmd.bl?'bl-ok':'bl-non')+'">'+esc(cmd.bl||'En attente')+'</td>'
+      +'<td>'+(cmd.dll?fmt(cmd.dll):'—')+'</td>'
+      +'<td style="font-size:7.5px;">'+(cmd.vd?esc(cmd.vd.slice(0,35)):' —')+'</td>'
+      +'</tr>';
+  };
+
+  if(grouper && !moisFiltre){
+    // Grouper par mois pour l'impression
+    const groupes = {};
+    list.forEach(cmd=>{
+      const mois=cmd.dc?cmd.dc.slice(0,7):'Inconnu';
+      if(!groupes[mois])groupes[mois]=[];
+      groupes[mois].push(cmd);
+    });
+    Object.keys(groupes).sort().reverse().forEach(mois=>{
+      const label=mois!=='Inconnu'?new Date(mois+'-01').toLocaleDateString('fr-CI',{month:'long',year:'numeric'}):mois;
+      const cmds=groupes[mois];
+      const blM=cmds.filter(c=>c.bl).length;
+      pw.document.write(
+        '<div class="mois-hd"><span>📅 '+label+'</span><span>'+cmds.length+' commande(s) · '+blM+' BL reçu(s)</span></div>'
+        +tableHeader+cmds.map(tableRow).join('')+'</tbody></table>'
+      );
+    });
+  } else {
+    // Un seul tableau (mois sélectionné ou vue liste)
+    pw.document.write(tableHeader+list.map(tableRow).join('')+'</tbody></table>');
+  }
+
+  pw.document.write('<div style="margin-top:10px;font-size:7.5px;color:#9ca3af;text-align:center;">'+esc(cfg.nom)+' — '+esc(cfg.adr)+' — '+esc(cfg.tel)+'</div>');
+  pw.document.write('<scr'+'ipt>window.onload=function(){window.print();};</'+'script></body></html>');
+  pw.document.close();
 }
 
 
