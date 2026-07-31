@@ -887,7 +887,6 @@ function changerStatut(cmdId,newSt){
     let d='\n\nDÉTAIL DE VOTRE COMMANDE :';
     if(cmd.vd){d+='\nŒil droit — '+cmd.vd+(cmd.trd?' / '+cmd.trd:'')+(cmd.fvd?' ('+cmd.fvd+')':'');}
     if(cmd.vg){d+='\nŒil gauche — '+cmd.vg+(cmd.trg?' / '+cmd.trg:'')+(cmd.fvg?' ('+cmd.fvg+')':'');}
-    if(cmd.mm){d+='\nMonture — '+cmd.mm+(cmd.tm?' ('+cmd.tm+')':'');}
     return d;
   };
   let msg='';
@@ -913,7 +912,6 @@ function confirmRecu(){
   let detailRecu='\n\nDÉTAIL DE VOTRE COMMANDE :';
   if(cmd.vd)detailRecu+='\nŒil droit — '+cmd.vd+(cmd.trd?' / '+cmd.trd:'')+(cmd.fvd?' ('+cmd.fvd+')':'');
   if(cmd.vg)detailRecu+='\nŒil gauche — '+cmd.vg+(cmd.trg?' / '+cmd.trg:'')+(cmd.fvg?' ('+cmd.fvg+')':'');
-  if(cmd.mm)detailRecu+='\nMonture — '+cmd.mm+(cmd.tm?' ('+cmd.tm+')':'');
   const msg='Cher(e) '+nom+',\n\nVos verres viennent d\'arriver à notre atelier.'+detailRecu+delaiRecu+'\nRéférence : '+numBonRecu+'\n\nNotre opticien procède au montage. Nous vous contactons dès que votre paire est prête.\n\nAdresse : '+cfg.adr+'\nTél : '+cfg.tel+'\n'+cfg.nom+'.';
   save();closeM('recu');renderCmds();
   if(cl)envoyerNotifComplete(cl,msg,'Réception — Notification');
