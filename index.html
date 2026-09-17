@@ -151,6 +151,7 @@ input,select,textarea,button{font-family:inherit;outline:none;}
   <button class="nb" onclick="nav('verres',this)"><span class="ni">🔬</span>Catalogue verres</button>
   <button class="nb" onclick="nav('traitements',this)"><span class="ni">✨</span>Traitements</button>
   <button class="nb" onclick="nav('fournisseurs',this)"><span class="ni">🚚</span>Fournisseurs</button>
+  <button class="nb" onclick="nav('lentilles',this)"><span class="ni">👁</span>Lentilles</button>
   <div class="nav-sec">Analyse</div>
   <button class="nb" onclick="nav('rapports',this)"><span class="ni">📊</span>Rapports</button>
   <button class="nb" onclick="nav('notifs',this)"><span class="ni">🔔</span>Notifications<span class="nbadge" id="nbadge" style="display:none">0</span></button>
@@ -300,6 +301,28 @@ input,select,textarea,button{font-family:inherit;outline:none;}
     <div class="card">
       <div class="th" style="grid-template-columns:1fr 100px 110px 1fr 70px 55px;"><div>DÉSIGNATION</div><div>CATÉGORIE</div><div>FOURNISSEUR</div><div>DESCRIPTION</div><div>PRIX FCFA</div><div></div></div>
       <div id="t-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LENTILLES -->
+<div class="view" id="v-lentilles">
+  <div class="tb">
+    <div class="tb-title" id="lent-title">Commandes lentilles</div>
+    <input class="fi" style="max-width:180px;" placeholder="🔍 Client, marque..." oninput="lentSearch=this.value;renderLentilles()">
+    <select class="fs" style="width:120px;" id="lent-filtre" onchange="renderLentilles()">
+      <option value="">Tous statuts</option>
+      <option>En attente</option><option>Commandé</option><option>Reçu</option><option>Prêt</option><option>Livré</option>
+    </select>
+    <button class="btn bt" onclick="openNewLentille()">+ Nouvelle commande</button>
+  </div>
+  <div class="ct">
+    <div id="lent-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:13px;"></div>
+    <div class="card">
+      <div class="th" style="grid-template-columns:90px 1fr 75px 1fr 80px 80px 90px;">
+        <div>N° BON</div><div>CLIENT</div><div>TYPE</div><div>MARQUE / REF.</div><div>STATUT</div><div>LIVRAISON</div><div>ACTIONS</div>
+      </div>
+      <div id="lent-list"></div>
     </div>
   </div>
 </div>
@@ -831,7 +854,7 @@ function nav(name,btn){
   const v=g('v-'+name);if(v)v.classList.add('on');
   if(btn)btn.classList.add('active');
   CUR=name;
-  const r={dashboard:renderDash,commandes:renderCmds,retards:renderRetards,suivibl:renderSuiviBL,clients:renderClients,verres:renderVerres,traitements:renderTraitements,fournisseurs:renderFours,rapports:renderRapports,notifs:renderNotifs,admin:renderAdmin};
+  const r={dashboard:renderDash,commandes:renderCmds,lentilles:renderLentilles,retards:renderRetards,suivibl:renderSuiviBL,clients:renderClients,verres:renderVerres,traitements:renderTraitements,fournisseurs:renderFours,rapports:renderRapports,notifs:renderNotifs,admin:renderAdmin};
   if(r[name])r[name]();
 }
 
